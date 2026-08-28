@@ -22,14 +22,14 @@ func funcA() {
 	defer logFunctionTime()()
 
 	time.Sleep(1 * time.Second)
-	fmt.Println("Выполнение функции A")
+	fmt.Println("Выполнение функции A...")
 }
 
 func funcB() {
 	defer logFunctionTime()()
 
 	time.Sleep(500 * time.Millisecond)
-	fmt.Println("Выполнение функции B")
+	fmt.Println("Выполнение функции B...")
 }
 
 func main() {
