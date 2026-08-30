@@ -16,8 +16,8 @@ type Result struct {
 
 // produce генерирует задания для обработки,
 // комбинируя host со значениями, считанными из filename,
-// и помещает их в канал outChan.
-func produce(filename string, host string, outChan chan<- string) {
+// и помещает их в канал outChannel.
+func produce(filename string, host string, outChannel chan<- string) {
 	file, err := os.Open(filename)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "opening %s: %v\n", filename, err)
@@ -34,7 +34,7 @@ func produce(filename string, host string, outChan chan<- string) {
 			continue
 		}
 
-		outChan <- "https://" + host + "/" + scanningDir
+		outChannel <- "https://" + host + "/" + scanningDir
 	}
 
 	if err := scanningDirs.Err(); err != nil {
@@ -42,10 +42,10 @@ func produce(filename string, host string, outChan chan<- string) {
 	}
 }
 
-// worker получает значения из канала inChan, пока он остается открытым,
-// выполняет обработку и помещает результаты в outChan.
-func worker(client *http.Client, inChan <-chan string, outChan chan<- Result) {
-	for job := range inChan {
+// worker получает значения из канала inChannel, пока он остается открытым,
+// выполняет обработку и помещает результаты в outChannel.
+func worker(client *http.Client, inChannel <-chan string, outChannel chan<- Result) {
+	for job := range inChannel {
 		resp, err := client.Get(job)
 		if err != nil {
 			continue
@@ -59,13 +59,13 @@ func worker(client *http.Client, inChan <-chan string, outChan chan<- Result) {
 			Code: resp.StatusCode,
 		}
 
-		outChan <- result
+		outChannel <- result
 	}
 }
 
-// collect получает значения из канала resultChan, пока он остается открытым,
+// collect получает значения из канала resultChannel, пока он остается открытым,
 // и записывает их в файл filename.
-func collect(filename string, resultChan <-chan Result) {
+func collect(filename string, resultChannel <-chan Result) {
 	dstFile, err := os.Create(filename)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "creating %s: %v\n", filename, err)
@@ -75,7 +75,7 @@ func collect(filename string, resultChan <-chan Result) {
 
 	writer := bufio.NewWriter(dstFile)
 
-	for r := range resultChan {
+	for r := range resultChannel {
 		s := fmt.Sprintf("%s - %d %s\n", r.Name, r.Code, http.StatusText(r.Code))
 		_, err = writer.WriteString(s)
 		if err != nil {
