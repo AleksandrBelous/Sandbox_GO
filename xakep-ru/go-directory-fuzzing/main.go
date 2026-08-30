@@ -23,16 +23,17 @@ func produce(filename string, host string, outChan chan<- string) {
 		fmt.Fprintf(os.Stderr, "opening %s: %v\n", filename, err)
 		return
 	}
-
 	defer file.Close()
 
 	scanningDirs := bufio.NewScanner(file)
 
 	for scanningDirs.Scan() {
 		scanningDir := strings.TrimSpace(scanningDirs.Text())
+
 		if scanningDir == "" {
 			continue
 		}
+
 		outChan <- "https://" + host + "/" + scanningDir
 	}
 
@@ -70,7 +71,6 @@ func collect(filename string, resultChan <-chan Result) {
 		fmt.Fprintf(os.Stderr, "creating %s: %v\n", filename, err)
 		return
 	}
-
 	defer dstFile.Close()
 
 	writer := bufio.NewWriter(dstFile)
@@ -87,6 +87,7 @@ func collect(filename string, resultChan <-chan Result) {
 		fmt.Fprintf(os.Stderr, "writing to %s: %v\n", filename, err)
 	}
 }
+
 func main() {
 	// TODO
 }
