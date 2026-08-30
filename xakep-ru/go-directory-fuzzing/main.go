@@ -62,7 +62,8 @@ func worker(client *http.Client, inChan <-chan string, outChan chan<- Result) {
 	}
 }
 
-// collect получает значения из канала resultCh, пока он остается открытым, и записывает их в файл filename.
+// collect получает значения из канала resultChan, пока он остается открытым,
+// и записывает их в файл filename.
 func collect(filename string, resultChan <-chan Result) {
 	dstFile, err := os.Create(filename)
 	if err != nil {
