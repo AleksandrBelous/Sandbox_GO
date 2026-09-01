@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
+	"time"
 )
 
 type Result struct {
@@ -75,10 +77,11 @@ func collect(filename string, resultChannel <-chan Result) {
 
 	writer := bufio.NewWriter(dstFile)
 
-	for r := range resultChannel {
-		s := fmt.Sprintf("%s - %d %s\n", r.Name, r.Code, http.StatusText(r.Code))
-		_, err = writer.WriteString(s)
+	for resultRaw := range resultChannel {
+		resultStr := fmt.Sprintf("%s - %d %s\n", resultRaw.Name, resultRaw.Code, http.StatusText(resultRaw.Code))
+		_, err = writer.WriteString(resultStr)
 		if err != nil {
+
 			fmt.Fprintf(os.Stderr, "writing to %s: %v\n", filename, err)
 		}
 	}
@@ -89,5 +92,59 @@ func collect(filename string, resultChannel <-chan Result) {
 }
 
 func main() {
-	// TODO
+	const (
+		srcFileName = "Common-DB-Backups.txt"
+		dstFileName = "results.txt"
+		maxWorkers  = 20
+	)
+
+	// Целевой хост - аргумент запуска
+	if len(os.Args) <= 1 {
+		fmt.Fprintf(os.Stderr, "Target address not specified\n")
+		os.Exit(1)
+	}
+	host := os.Args[1]
+
+	// Настроенный экземпляр HTTP клиента
+	client := &http.Client{
+		Timeout: 1 * time.Second,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			// Игнорируем редиректы
+			return http.ErrUseLastResponse
+		},
+	}
+
+	// Канал с заданиями
+	jobChannel := make(chan string, maxWorkers)
+
+	// Канал с результатами
+	resultChannel := make(chan Result, maxWorkers)
+
+	// Группа конвейера обработки
+	var pipelineWG sync.WaitGroup
+
+	// Запускаем конвейер обработки
+	pipelineWG.Go(func() {
+		collect(dstFileName, resultChannel)
+	})
+	pipelineWG.Go(func() {
+		produce(srcFileName, host, jobChannel)
+		close(jobChannel)
+	})
+
+	// Группа пула воркеров
+	var workerWG sync.WaitGroup
+
+	// Запускаем пул воркеров
+	for range maxWorkers {
+		workerWG.Go(func() {
+			worker(client, jobChannel, resultChannel)
+		})
+	}
+	// Ожидаем завершения пула воркеров и закрываем канал результатов
+	workerWG.Wait()
+	close(resultChannel)
+
+	// Ожидаем завершения конвейера
+	pipelineWG.Wait()
 }
