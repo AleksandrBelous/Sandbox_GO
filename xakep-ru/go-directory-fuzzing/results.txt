@@ -1,0 +1,10 @@
+https://example.com/dump.tar.bz2 - 404 Not Found
+https://example.com/db_backup.tar.gz - 404 Not Found
+https://example.com/db_backup.sql.7z - 404 Not Found
+https://example.com/db_backup.tar - 404 Not Found
+https://example.com/db_backup.sql.bz2 - 404 Not Found
+https://example.com/db_backup.sql - 404 Not Found
+https://example.com/db_backup.tar.bzip2 - 404 Not Found
+https://example.com/db_backup.rar - 404 Not Found
+https://example.com/db_backup.7z - 404 Not Found
+https://example.com/db_backup.sql.tar - 404 Not Found
