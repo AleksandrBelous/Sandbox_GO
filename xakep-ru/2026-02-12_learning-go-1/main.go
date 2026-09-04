@@ -3,16 +3,25 @@ package main
 import (
 	"fmt"
 	"os"
+	"runtime"
 )
 
 func main() {
-	var username string
-	username = "Xakep"
+	var (
+		envKey   string
+		userName string
+	)
 
-	val, isOk := os.LookupEnv("USERNAME")
-	if isOk {
-		username = val
+	if runtime.GOOS == "windows" {
+		envKey = "USERNAME"
+	} else {
+		envKey = "LOGNAME"
 	}
 
-	fmt.Println("Hello,", username)
+	userName, isOk := os.LookupEnv(envKey)
+	if !isOk {
+		userName = "Xakep"
+	}
+
+	fmt.Println("Hello,", userName)
 }
