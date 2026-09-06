@@ -70,7 +70,7 @@ func run() (err error) {
 
 	scanner := bufio.NewScanner(srcFile)
 
-	dstFile, err := os.Open(dstFileName)
+	dstFile, err := os.Create(dstFileName)
 	if err != nil {
 		return err
 	}

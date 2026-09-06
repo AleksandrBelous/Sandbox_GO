@@ -1,0 +1,28 @@
+178.248.232.27:80 is open
+HTTP/1.1 301 Moved Permanently
+Server: QRATOR
+Date: Sun, 06 Sep 2026 20:15:19 GMT
+Content-Type: text/html
+Content-Length: 178
+Connection: keep-alive
+Keep-Alive: timeout=15
+Location: https://xakep.ru/
+
+178.248.232.27:443 is open
+HTTP/1.1 400 Bad Request
+Server: QRATOR
+Date: Sun, 06 Sep 2026 20:15:19 GMT
+Content-Type: text/html
+Content-Length: 32
+Connection: close
+
+45.33.32.156:22 is open
+SSH-2.0-OpenSSH_6.6.1p1 Ubuntu-2ubuntu2.13
+45.33.32.156:80 is open
+HTTP/1.1 200 OK
+Date: Sun, 06 Sep 2026 20:15:22 GMT
+Server: Apache/2.4.7 (Ubuntu)
+Accept-Ranges: bytes
+Vary: Accept-Encoding
+Content-Type: text/html
+
