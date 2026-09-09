@@ -1,8 +1,9 @@
+//go:build linux
+
 package main
 
 import (
 	"bufio"
-	"fmt"
 	"net"
 	"os"
 	"strings"
@@ -11,7 +12,7 @@ import (
 func retrieveArpTable() map[string]string {
 	result := make(map[string]string)
 
-	// Плдатформенно-зависимый код (Linux)
+	// Платформенно-зависимый код (Linux)
 	arpFile, err := os.Open("/proc/net/arp")
 	if err != nil {
 		return result
@@ -22,15 +23,12 @@ func retrieveArpTable() map[string]string {
 
 	for scanner.Scan() {
 		line := scanner.Text()
-		fmt.Print(line)
 		line = strings.TrimSpace(line)
-		fmt.Print(line)
 		if line == "" {
 			continue
 		}
 
 		tokens := strings.Fields(line)
-		fmt.Print(tokens)
 		if len(tokens) < 4 {
 			continue
 		}
