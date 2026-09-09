@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"portscan/arp"
 	"strconv"
 	"time"
 )
@@ -87,6 +88,8 @@ func run() (err error) {
 	timeout := 250 * time.Millisecond
 	buffer := make([]byte, 256)
 
+	arpReader := arp.NewArpReader()
+
 	for scanner.Scan() {
 		targetHost := scanner.Text()
 
@@ -96,6 +99,11 @@ func run() (err error) {
 				continue
 			}
 			targetHost = ips[0]
+		}
+
+		mac, isMacFound := arpReader.GetMac(targetHost)
+		if isMacFound {
+			fmt.Println(mac)
 		}
 
 		for _, port := range ports {
