@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -39,13 +40,25 @@ func run() error {
 	// Построчно считываем и проверяем домены
 	scanner := bufio.NewScanner(srcFile)
 
+	// Создаём WaitGroup
+	var wg sync.WaitGroup
+
 	for scanner.Scan() {
 		sub := strings.TrimSpace(scanner.Text())
 		if sub == "" {
 			continue
 		}
 
+		// Увеличиваем счётчик горутин перед запуском
+		// Перед запуском горутины сообщаем вызовом wg.Add(1),
+		// что запускается одна горутина.
+		wg.Add(1)
 		go func() {
+			// Уменьшаем счётчик горутин перед выходом
+			// Внутри горутины нужно не забыть сообщить о ее завершении
+			// вызовом wg.Done().
+			defer wg.Done()
+
 			targetHostURL := "https://" + sub + "." + targetHost
 
 			resp, err := client.Get(targetHostURL)
@@ -63,6 +76,13 @@ func run() error {
 			}
 			fmt.Printf("%s - %d %s\n", targetHostURL, respStatusCode, http.StatusText(respStatusCode))
 		}()
+
+		// Дожидаемся завершения всех горутин
+		// Внутри WaitGroup находится атомарный счетчик.
+		// Вызывая Add(), мы прибавляем к нему значение, переданное в аргументе.
+		// Вызывая Done(), декрементируем счетчик, то есть уменьшаем его на 1.
+		// Сам Wait() ждет, пока счетчик не станет равен 0.
+		wg.Wait()
 	}
 
 	if err := scanner.Err(); err != nil {
