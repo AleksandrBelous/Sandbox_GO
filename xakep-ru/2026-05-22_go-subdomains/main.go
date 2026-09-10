@@ -45,22 +45,24 @@ func run() error {
 			continue
 		}
 
-		targetHostURL := "https://" + sub + "." + targetHost
+		go func() {
+			targetHostURL := "https://" + sub + "." + targetHost
 
-		resp, err := client.Get(targetHostURL)
-		if err != nil {
-			continue
-		}
+			resp, err := client.Get(targetHostURL)
+			if err != nil {
+				return
+			}
+			defer resp.Body.Close()
 
-		resp.Body.Close()
-		io.ReadAll(resp.Body)
+			io.Copy(io.Discard, resp.Body)
 
-		respStatusCode := resp.StatusCode
-		if respStatusCode == http.StatusNotFound {
-			// 404
-			continue
-		}
-		fmt.Printf("%s - %d %s\n", targetHostURL, respStatusCode, http.StatusText(respStatusCode))
+			respStatusCode := resp.StatusCode
+			if respStatusCode == http.StatusNotFound {
+				// 404
+				return
+			}
+			fmt.Printf("%s - %d %s\n", targetHostURL, respStatusCode, http.StatusText(respStatusCode))
+		}()
 	}
 
 	if err := scanner.Err(); err != nil {
