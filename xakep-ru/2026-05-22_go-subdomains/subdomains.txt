@@ -1,0 +1,10 @@
+api
+graphql
+github
+gitlab
+cloud
+web
+app
+admin
+dashboard
+auth
