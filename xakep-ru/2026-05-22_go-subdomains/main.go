@@ -86,7 +86,6 @@ func run() error {
 			defer mu.Unlock()
 			results = append(results, result)
 		})
-
 		wg.Wait()
 	}
 
