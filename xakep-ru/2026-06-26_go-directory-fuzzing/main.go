@@ -142,13 +142,16 @@ func main() {
 
 	// Запускаем конвейер обработки
 	pipelineWG.Go(func() {
+		// collect собирает результаты из канала resultCh, пока он открыт
 		collect(config)
 	})
 	pipelineWG.Go(func() {
+		// produce вычитывает исходный файл до конца или ошибки и завершается, после чего закрывается канал jobCh
 		produce(config)
 		close(jobCh)
 	})
 	for range maxWorkers {
+		// горутины пула воркеров работают до тех пор, пока открыт канал jobCh, после чего завершаются
 		workerWG.Go(func() {
 			worker(config)
 		})
@@ -156,12 +159,15 @@ func main() {
 
 	// Закрываем канал результатов по завершению пула воркеров
 	go func() {
+		// отдельная горутина ждет завершения пула воркеров, после этого закрывает канал resultCh и завершается сама
 		workerWG.Wait()
 		close(resultCh)
+		// раз resultCh закрыт, то завершается и collect
 	}()
 
 	// Закрываем канал ошибок по завершению конвейера
 	go func() {
+		// collect и produce завершились, отдельная горутина, ожидающая их, закрывает канал errCh и завершается сама
 		pipelineWG.Wait()
 		close(errCh)
 	}()
@@ -173,6 +179,7 @@ func main() {
 			fmt.Fprintf(os.Stderr, "error %v\n", err)
 			hasError = true
 		}
+		// основной поток программы, в это время застрявший в цикле чтения из errCh, выходит из него
 	}
 	if hasError {
 		os.Exit(1)
