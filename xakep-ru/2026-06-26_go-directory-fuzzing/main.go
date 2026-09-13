@@ -61,10 +61,10 @@ func worker(client *http.Client, inCh <-chan string, outCh chan<- Result) {
 	}
 }
 
-func collect(filename string, resultCh <-chan Result) {
+func collect(filename string, resultCh <-chan Result, errCh chan<- error) {
 	dstFile, err := os.Create(filename)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "creating %s: %v\n", filename, err)
+		errCh <- fmt.Errorf("creating %s: %w\n", filename, err)
 	}
 	defer dstFile.Close()
 
@@ -74,12 +74,12 @@ func collect(filename string, resultCh <-chan Result) {
 		s := fmt.Sprintf("%s - %d %s\n", r.Name, r.Code, http.StatusText(r.Code))
 		_, err = writer.WriteString(s)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "writing to %s: %v\n", filename, err)
+			errCh <- fmt.Errorf("writing to %s: %w\n", filename, err)
 		}
 	}
 
 	if err := writer.Flush(); err != nil {
-		fmt.Fprintf(os.Stderr, "writing to %s: %v\n", filename, err)
+		errCh <- fmt.Errorf("writing to %s: %w\n", filename, err)
 	}
 }
 
@@ -110,13 +110,16 @@ func main() {
 	jobCh := make(chan string, maxWorkers)
 	// Канал с результатами
 	resultCh := make(chan Result, maxWorkers)
+	// Канал с ошибками
+	errCh := make(chan error, 3)
 
 	// Группа конвейера обработки
 	var pipelineWG sync.WaitGroup
 
 	// Запускаем конвейер обработки
 	pipelineWG.Go(func() {
-		collect(dstFileName, resultCh)
+		collect(dstFileName, resultCh, errCh)
+		close(errCh)
 	})
 	pipelineWG.Go(func() {
 		produce(srcFileName, targetHost, jobCh)
