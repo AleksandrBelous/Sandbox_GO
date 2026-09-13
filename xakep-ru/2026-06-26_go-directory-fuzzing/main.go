@@ -87,6 +87,7 @@ func main() {
 	const (
 		srcFileName = "subdomains.txt"
 		dstFileName = "results.txt"
+		maxWorkers  = 20
 	)
 
 	// Целевой хост - аргумент
@@ -106,26 +107,33 @@ func main() {
 	}
 
 	// Канал с заданиями
-	jobCh := make(chan string, 10)
+	jobCh := make(chan string, maxWorkers)
 	// Канал с результатами
-	resultCh := make(chan Result, 10)
+	resultCh := make(chan Result, maxWorkers)
 
 	// Группа конвейера обработки
-	var piplineWG sync.WaitGroup
+	var pipelineWG sync.WaitGroup
 
 	// Запускаем конвейер обработки
-	piplineWG.Go(func() {
+	pipelineWG.Go(func() {
 		collect(dstFileName, resultCh)
 	})
-	piplineWG.Go(func() {
-		worker(client, jobCh, resultCh)
-		close(resultCh)
-	})
-	piplineWG.Go(func() {
+	pipelineWG.Go(func() {
 		produce(srcFileName, targetHost, jobCh)
 		close(jobCh)
 	})
 
+	// Группа пула воркеров
+	var workerWG sync.WaitGroup
+	for range maxWorkers {
+		workerWG.Go(func() {
+			worker(client, jobCh, resultCh)
+		})
+	}
+	// Ожидаем завершения пула воркеров и закрываем канал результатов
+	workerWG.Wait()
+	close(resultCh)
+
 	// Ожидаем завершения конвейера
-	piplineWG.Wait()
+	pipelineWG.Wait()
 }
