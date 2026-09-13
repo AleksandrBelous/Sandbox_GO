@@ -16,10 +16,21 @@ type Result struct {
 	Code int
 }
 
+type PipelineConfig struct {
+	JobCh        chan string
+	ResultCh     chan Result
+	ErrCh        chan error
+	ClientHandle *http.Client
+	SrcFileName  string
+	DstFileName  string
+	HostName     string
+}
+
 // produce генерирует задания для обработки,
 // комбинируя host со значениями из filename,
 // и помещает их в канал outCh
-func produce(filename string, host string, outCh chan<- string) {
+func produce(cfg *PipelineConfig) {
+	filename := cfg.SrcFileName
 	file, err := os.Open(filename)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "opening %s: %v\n", filename, err)
@@ -34,7 +45,7 @@ func produce(filename string, host string, outCh chan<- string) {
 		if s == "" {
 			continue
 		}
-		outCh <- "https://" + host + "/" + s
+		cfg.JobCh <- "https://" + cfg.HostName + "/" + s
 	}
 
 	if err := scanner.Err(); err != nil {
@@ -44,9 +55,9 @@ func produce(filename string, host string, outCh chan<- string) {
 
 // worker получает значения из канала inCh, пока он остается открытым,
 // выполняет обработку и помещает результаты в outCh
-func worker(client *http.Client, inCh <-chan string, outCh chan<- Result) {
-	for job := range inCh {
-		resp, err := client.Get(job)
+func worker(cfg *PipelineConfig) {
+	for job := range cfg.JobCh {
+		resp, err := cfg.ClientHandle.Get(job)
 		if err != nil {
 			continue
 		}
@@ -57,29 +68,30 @@ func worker(client *http.Client, inCh <-chan string, outCh chan<- Result) {
 			Name: job,
 			Code: resp.StatusCode,
 		}
-		outCh <- result
+		cfg.ResultCh <- result
 	}
 }
 
-func collect(filename string, resultCh <-chan Result, errCh chan<- error) {
+func collect(cfg *PipelineConfig) {
+	filename := cfg.DstFileName
 	dstFile, err := os.Create(filename)
 	if err != nil {
-		errCh <- fmt.Errorf("creating %s: %w\n", filename, err)
+		cfg.ErrCh <- fmt.Errorf("creating %s: %w\n", filename, err)
 	}
 	defer dstFile.Close()
 
 	writer := bufio.NewWriter(dstFile)
 
-	for r := range resultCh {
+	for r := range cfg.ResultCh {
 		s := fmt.Sprintf("%s - %d %s\n", r.Name, r.Code, http.StatusText(r.Code))
 		_, err = writer.WriteString(s)
 		if err != nil {
-			errCh <- fmt.Errorf("writing to %s: %w\n", filename, err)
+			cfg.ErrCh <- fmt.Errorf("writing to %s: %w\n", filename, err)
 		}
 	}
 
 	if err := writer.Flush(); err != nil {
-		errCh <- fmt.Errorf("writing to %s: %w\n", filename, err)
+		cfg.ErrCh <- fmt.Errorf("writing to %s: %w\n", filename, err)
 	}
 }
 
@@ -113,30 +125,56 @@ func main() {
 	// Канал с ошибками
 	errCh := make(chan error, 3)
 
+	config := &PipelineConfig{
+		JobCh:        jobCh,
+		ResultCh:     resultCh,
+		ErrCh:        errCh,
+		ClientHandle: client,
+		HostName:     targetHost,
+		SrcFileName:  srcFileName,
+		DstFileName:  dstFileName,
+	}
+
 	// Группа конвейера обработки
 	var pipelineWG sync.WaitGroup
+	// Группа пула воркеров
+	var workerWG sync.WaitGroup
 
 	// Запускаем конвейер обработки
 	pipelineWG.Go(func() {
-		collect(dstFileName, resultCh, errCh)
-		close(errCh)
+		collect(config)
 	})
 	pipelineWG.Go(func() {
-		produce(srcFileName, targetHost, jobCh)
+		produce(config)
 		close(jobCh)
 	})
-
-	// Группа пула воркеров
-	var workerWG sync.WaitGroup
 	for range maxWorkers {
 		workerWG.Go(func() {
-			worker(client, jobCh, resultCh)
+			worker(config)
 		})
 	}
-	// Ожидаем завершения пула воркеров и закрываем канал результатов
-	workerWG.Wait()
-	close(resultCh)
 
-	// Ожидаем завершения конвейера
-	pipelineWG.Wait()
+	// Закрываем канал результатов по завершению пула воркеров
+	go func() {
+		workerWG.Wait()
+		close(resultCh)
+	}()
+
+	// Закрываем канал ошибок по завершению конвейера
+	go func() {
+		pipelineWG.Wait()
+		close(errCh)
+	}()
+
+	// Сбор ошибок
+	hasError := false
+	for err := range errCh {
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error %v\n", err)
+			hasError = true
+		}
+	}
+	if hasError {
+		os.Exit(1)
+	}
 }
