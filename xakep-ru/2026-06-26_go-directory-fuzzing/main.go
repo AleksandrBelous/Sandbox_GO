@@ -99,7 +99,7 @@ func main() {
 	const (
 		srcFileName = "subdomains.txt"
 		dstFileName = "results.txt"
-		maxWorkers  = 20
+		maxWorkers  = 1024
 	)
 
 	// Целевой хост - аргумент
