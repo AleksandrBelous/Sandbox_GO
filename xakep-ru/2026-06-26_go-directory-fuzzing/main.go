@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
+	"time"
 )
 
 type Result struct {
@@ -82,5 +84,48 @@ func collect(filename string, resultCh <-chan Result) {
 }
 
 func main() {
-	// TODO
+	const (
+		srcFileName = "subdomains.txt"
+		dstFileName = "results.txt"
+	)
+
+	// Целевой хост - аргумент
+	if len(os.Args) <= 1 {
+		fmt.Fprintf(os.Stderr, "Target address not specified\n")
+		os.Exit(1)
+	}
+	targetHost := os.Args[1]
+
+	// Настроенный экземпляр HHTP-клиента
+	client := &http.Client{
+		Timeout: 1 * time.Second,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			// Игнорируем редиректы
+			return http.ErrUseLastResponse
+		},
+	}
+
+	// Канал с заданиями
+	jobCh := make(chan string, 10)
+	// Канал с результатами
+	resultCh := make(chan Result, 10)
+
+	// Группа конвейера обработки
+	var piplineWG sync.WaitGroup
+
+	// Запускаем конвейер обработки
+	piplineWG.Go(func() {
+		collect(dstFileName, resultCh)
+	})
+	piplineWG.Go(func() {
+		worker(client, jobCh, resultCh)
+		close(resultCh)
+	})
+	piplineWG.Go(func() {
+		produce(srcFileName, targetHost, jobCh)
+		close(jobCh)
+	})
+
+	// Ожидаем завершения конвейера
+	piplineWG.Wait()
 }
