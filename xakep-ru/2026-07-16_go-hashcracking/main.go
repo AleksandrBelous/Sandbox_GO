@@ -14,7 +14,7 @@ import (
 type PipelineConfig struct {
 	JobCh        chan string
 	ResultCh     chan string
-	DoneSignalCh <-chan struct{}
+	DoneSignalCh <-chan struct{} // Пустая структура без полей: ее экземпляр занимает ровно ноль байт
 	ErrorCh      chan<- error
 	SrcFileName  string
 	TargetHash   *[md5.Size]byte
@@ -39,8 +39,10 @@ func produce(cfg *PipelineConfig) {
 
 		select {
 		case <-cfg.DoneSignalCh:
+			// Получим нулевое значение из закрытого канала DoneSignalCh и выполним return
 			return
 		case cfg.JobCh <- s:
+			// Или отправка в канал разблокируется и мы перейдем к следующей итерации цикла чтения
 		}
 	}
 
@@ -57,6 +59,7 @@ func worker(cfg *PipelineConfig) {
 		select {
 		case job, ok := <-cfg.JobCh:
 			if !ok {
+				// Возврат при чтении из закрытого канала, проверка факта закрытия по второму значению (ok)
 				return
 			}
 			if md5.Sum([]byte(job)) == *cfg.TargetHash {
@@ -64,6 +67,9 @@ func worker(cfg *PipelineConfig) {
 				return
 			}
 		case <-cfg.DoneSignalCh:
+			// Ветка case <-cfg.DoneSignalCh: будет ждать, а когда канал cfg.DoneSignalCh закроется,
+			// чтение из него сразу разблокируется, получим (и проигнорируем) значение,
+			// выполним во всех горутинах return и завершим их
 			return
 		}
 	}
@@ -83,7 +89,7 @@ func collect(cfg *PipelineConfig) {
 
 func main() {
 	const srcFileName = "10k-most-common.txt"
-	var maxWorkers = runtime.GOMAXPROCS(0)
+	var maxWorkers = runtime.GOMAXPROCS(0) // ставим лимит не выше числа доступных ядер
 
 	// Целевой хеш - аргумент запуска
 	if len(os.Args) <= 1 {
