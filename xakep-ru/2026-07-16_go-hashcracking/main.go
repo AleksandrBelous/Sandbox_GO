@@ -49,7 +49,6 @@ func produce(cfg *PipelineConfig) {
 // worker читает слова из cfg.JobCh, вычисляет MD5-хеш и сравнивает его с cfg.TargetHash;
 // при совпадении помещает слово в cfg.ResultCh и завершается;
 // при отсутствии совпадений завершается
-
 func worker(cfg *PipelineConfig) {
 	for {
 		select {
