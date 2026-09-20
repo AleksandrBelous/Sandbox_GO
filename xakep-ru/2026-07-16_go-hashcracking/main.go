@@ -3,9 +3,12 @@ package main
 import (
 	"bufio"
 	"crypto/md5"
+	"encoding/hex"
 	"fmt"
 	"os"
+	"runtime"
 	"strings"
+	"sync"
 )
 
 type PipelineConfig struct {
@@ -79,5 +82,87 @@ func collect(cfg *PipelineConfig) {
 }
 
 func main() {
-	// TODO
+	const srcFileName = "10k-most-common.txt"
+	var maxWorkers = runtime.GOMAXPROCS(0)
+
+	// Целевой хеш - аргумент запуска
+	if len(os.Args) <= 1 {
+		fmt.Fprintf(os.Stderr, "Target MD5 hash not specified\n")
+		os.Exit(1)
+	}
+	hashStr := strings.TrimSpace(os.Args[1])
+	// Валидация
+	if len(hashStr) != 32 {
+		fmt.Fprintf(os.Stderr, "MD5 hash must be 32 chars long\n")
+		os.Exit(1)
+	}
+	var hashBytes [md5.Size]byte
+	_, err := hex.Decode(hashBytes[:], []byte(hashStr))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "%v", err)
+		os.Exit(1)
+	}
+
+	// Канал с заданиями
+	jobCh := make(chan string, maxWorkers)
+	// Канал с результатами
+	resultCh := make(chan string)
+	// Канал с ошибками
+	errCh := make(chan error, 3)
+	// Канал для сигнализации о завершении
+	doneSignalCh := make(chan struct{})
+
+	config := &PipelineConfig{
+		JobCh:        jobCh,
+		ResultCh:     resultCh,
+		DoneSignalCh: doneSignalCh,
+		ErrorCh:      errCh,
+		SrcFileName:  srcFileName,
+		TargetHash:   &hashBytes,
+	}
+
+	// Группа конвейера обработки
+	var piplineWg sync.WaitGroup
+	// Группа пула воркеров
+	var workerWg sync.WaitGroup
+
+	// Запускаем конвейер обработки
+	piplineWg.Go(func() {
+		produce(config)
+		close(jobCh)
+	})
+	piplineWg.Go(func() {
+		collect(config)
+		close(doneSignalCh)
+	})
+	// Запускаем пул горутин-обработчиков
+	for range maxWorkers {
+		workerWg.Go(func() {
+			worker(config)
+		})
+	}
+
+	// Закрываем канал результатов по завершении обработчиков
+	go func() {
+		workerWg.Wait()
+		close(resultCh)
+	}()
+
+	// Закрываем канал ошибок по завершении конвейера
+	go func() {
+		piplineWg.Wait()
+		close(errCh)
+	}()
+
+	// Сбор ошибок
+	hadErr := false
+	for err := range errCh {
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "")
+			hadErr = true
+		}
+	}
+	if hadErr {
+		os.Exit(1)
+	}
 }
