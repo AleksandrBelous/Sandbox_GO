@@ -69,7 +69,7 @@ func worker(cfg *PipelineConfig) {
 	}
 }
 
-// Функция collect ожидает чтения либо закрытия cfg.ResultCh, выводит значение в консоль и завершается
+// collect ожидает чтения либо закрытия cfg.ResultCh, выводит значение в консоль и завершается
 func collect(cfg *PipelineConfig) {
 	pwd, ok := <-cfg.ResultCh
 	if !ok {
