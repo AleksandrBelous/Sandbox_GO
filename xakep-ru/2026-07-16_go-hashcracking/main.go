@@ -9,6 +9,8 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
+	"time"
 )
 
 type PipelineConfig struct {
@@ -18,6 +20,7 @@ type PipelineConfig struct {
 	ErrorCh      chan<- error
 	SrcFileName  string
 	TargetHash   *[md5.Size]byte
+	Counter      *atomic.Uint64
 }
 
 // produce генерирует задания для обработки, считывая значения из cfg.SrcFileName, и помещает их в канал cfg.JobCh;
@@ -62,6 +65,8 @@ func worker(cfg *PipelineConfig) {
 				// Возврат при чтении из закрытого канала, проверка факта закрытия по второму значению (ok)
 				return
 			}
+			// Увеличиваем счётчик попыток сравнения для каждого сравнения
+			cfg.Counter.Add(1)
 			if md5.Sum([]byte(job)) == *cfg.TargetHash {
 				cfg.ResultCh <- job
 				return
@@ -88,8 +93,9 @@ func collect(cfg *PipelineConfig) {
 }
 
 func main() {
-	const srcFileName = "10k-most-common.txt"
+	const srcFileName = "xato-net-10-million-passwords-1000000.txt"
 	var maxWorkers = runtime.GOMAXPROCS(0) // ставим лимит не выше числа доступных ядер
+	var count atomic.Uint64
 
 	// Целевой хеш - аргумент запуска
 	if len(os.Args) <= 1 {
@@ -125,6 +131,7 @@ func main() {
 		ErrorCh:      errCh,
 		SrcFileName:  srcFileName,
 		TargetHash:   &hashBytes,
+		Counter:      &count,
 	}
 
 	// Группа конвейера обработки
@@ -171,4 +178,18 @@ func main() {
 	if hadErr {
 		os.Exit(1)
 	}
+
+	// Отдельная горутина для вывода попыток через равные промежутки времени
+	go func() {
+		ticker := time.NewTicker(time.Millisecond * 250)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				fmt.Printf("\r%d", count.Load())
+			case <-doneSignalCh:
+				return
+			}
+		}
+	}()
 }
