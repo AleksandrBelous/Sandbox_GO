@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"crypto/md5"
 	"encoding/hex"
 	"fmt"
@@ -14,18 +15,17 @@ import (
 )
 
 type PipelineConfig struct {
-	JobCh        chan string
-	ResultCh     chan string
-	DoneSignalCh <-chan struct{} // Пустая структура без полей: ее экземпляр занимает ровно ноль байт
-	ErrorCh      chan<- error
-	SrcFileName  string
-	TargetHash   *[md5.Size]byte
-	Counter      *atomic.Uint64
+	JobCh       chan string
+	ResultCh    chan string
+	ErrorCh     chan<- error
+	SrcFileName string
+	TargetHash  *[md5.Size]byte
+	Counter     *atomic.Uint64
 }
 
 // produce генерирует задания для обработки, считывая значения из cfg.SrcFileName, и помещает их в канал cfg.JobCh;
 // завершается по окончании чтения файла
-func produce(cfg *PipelineConfig) {
+func produce(ctx context.Context, cfg *PipelineConfig) {
 	file, err := os.Open(cfg.SrcFileName)
 	if err != nil {
 		cfg.ErrorCh <- fmt.Errorf("opening %s^ %w", cfg.SrcFileName, err)
@@ -41,8 +41,8 @@ func produce(cfg *PipelineConfig) {
 		}
 
 		select {
-		case <-cfg.DoneSignalCh:
-			// Получим нулевое значение из закрытого канала DoneSignalCh и выполним return
+		case <-ctx.Done():
+			//
 			return
 		case cfg.JobCh <- s:
 			// Или отправка в канал разблокируется и мы перейдем к следующей итерации цикла чтения
@@ -57,7 +57,7 @@ func produce(cfg *PipelineConfig) {
 // worker читает слова из cfg.JobCh, вычисляет MD5-хеш и сравнивает его с cfg.TargetHash;
 // при совпадении помещает слово в cfg.ResultCh и завершается;
 // при отсутствии совпадений завершается
-func worker(cfg *PipelineConfig) {
+func worker(ctx context.Context, cfg *PipelineConfig) {
 	for {
 		select {
 		case job, ok := <-cfg.JobCh:
@@ -71,10 +71,8 @@ func worker(cfg *PipelineConfig) {
 				cfg.ResultCh <- job
 				return
 			}
-		case <-cfg.DoneSignalCh:
-			// Ветка case <-cfg.DoneSignalCh: будет ждать, а когда канал cfg.DoneSignalCh закроется,
-			// чтение из него сразу разблокируется, получим (и проигнорируем) значение,
-			// выполним во всех горутинах return и завершим их
+		case <-ctx.Done():
+			//
 			return
 		}
 	}
@@ -121,17 +119,17 @@ func main() {
 	resultCh := make(chan string)
 	// Канал с ошибками
 	errCh := make(chan error, 3)
-	// Канал для сигнализации о завершении
-	doneSignalCh := make(chan struct{})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
 	config := &PipelineConfig{
-		JobCh:        jobCh,
-		ResultCh:     resultCh,
-		DoneSignalCh: doneSignalCh,
-		ErrorCh:      errCh,
-		SrcFileName:  srcFileName,
-		TargetHash:   &hashBytes,
-		Counter:      &count,
+		JobCh:       jobCh,
+		ResultCh:    resultCh,
+		ErrorCh:     errCh,
+		SrcFileName: srcFileName,
+		TargetHash:  &hashBytes,
+		Counter:     &count,
 	}
 
 	// Группа конвейера обработки
@@ -141,17 +139,17 @@ func main() {
 
 	// Запускаем конвейер обработки
 	piplineWg.Go(func() {
-		produce(config)
+		produce(ctx, config)
 		close(jobCh)
 	})
 	piplineWg.Go(func() {
 		collect(config)
-		close(doneSignalCh)
+		cancel()
 	})
 	// Запускаем пул горутин-обработчиков
 	for range maxWorkers {
 		workerWg.Go(func() {
-			worker(config)
+			worker(ctx, config)
 		})
 	}
 
@@ -187,7 +185,7 @@ func main() {
 			select {
 			case <-ticker.C:
 				fmt.Printf("\r%d", count.Load())
-			case <-doneSignalCh:
+			case <-ctx.Done():
 				return
 			}
 		}
