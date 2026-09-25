@@ -7,10 +7,12 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os"
+	"os/signal"
 	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 )
 
@@ -120,8 +122,11 @@ func main() {
 	// Канал с ошибками
 	errCh := make(chan error, 3)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	// Флаг ошибки обработки
+	var hadError atomic.Bool
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 
 	config := &PipelineConfig{
 		JobCh:       jobCh,
@@ -130,51 +135,6 @@ func main() {
 		SrcFileName: srcFileName,
 		TargetHash:  &hashBytes,
 		Counter:     &count,
-	}
-
-	// Группа конвейера обработки
-	var piplineWg sync.WaitGroup
-	// Группа пула воркеров
-	var workerWg sync.WaitGroup
-
-	// Запускаем конвейер обработки
-	piplineWg.Go(func() {
-		produce(ctx, config)
-		close(jobCh)
-	})
-	piplineWg.Go(func() {
-		collect(config)
-		cancel()
-	})
-	// Запускаем пул горутин-обработчиков
-	for range maxWorkers {
-		workerWg.Go(func() {
-			worker(ctx, config)
-		})
-	}
-
-	// Закрываем канал результатов по завершении обработчиков
-	go func() {
-		workerWg.Wait()
-		close(resultCh)
-	}()
-
-	// Закрываем канал ошибок по завершении конвейера
-	go func() {
-		piplineWg.Wait()
-		close(errCh)
-	}()
-
-	// Сбор ошибок
-	hadErr := false
-	for err := range errCh {
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "")
-			hadErr = true
-		}
-	}
-	if hadErr {
-		os.Exit(1)
 	}
 
 	// Отдельная горутина для вывода попыток через равные промежутки времени
@@ -190,4 +150,49 @@ func main() {
 			}
 		}
 	}()
+
+	// Сбор ошибок
+	var errWg sync.WaitGroup
+	errWg.Go(func() {
+		for err := range errCh {
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "error %v\n", err)
+				hadError.Store(true)
+			}
+		}
+	})
+
+	// Генерируем задания
+	// Горутина‑генератор пишет задания в канал и сама же его закрывает
+	go func() {
+		produce(ctx, config)
+		close(jobCh)
+	}()
+
+	// Запускаем пул обработчиков, по завершении закрываем канал
+	var workerWg sync.WaitGroup
+	for range maxWorkers {
+		workerWg.Go(func() {
+			worker(ctx, config)
+		})
+		// Обработчики завершаются, когда задания заканчиваются и закрывается jobCh или когда отменяется контекст
+	}
+	go func() {
+		// После завершения обработчиков писать в каналы уже некому.
+		// Значит, дождавшись обработчиков, мы можем безопасно закрыть каналы.
+		// Это завершит горутину - сборщик ошибок.
+		workerWg.Wait()
+		close(resultCh)
+		close(errCh)
+	}()
+
+	// Останавливаем работу после получения результата
+	collect(config)
+	stop()
+
+	// Ожидаем завершения сборки ошибок и вызываем код возврата
+	errWg.Wait()
+	if hadError.Load() {
+		os.Exit(1)
+	}
 }
