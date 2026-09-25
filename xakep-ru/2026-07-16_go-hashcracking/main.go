@@ -6,6 +6,9 @@ import (
 	"crypto/md5"
 	"encoding/hex"
 	"fmt"
+	"log"
+	"net/http"
+	_ "net/http/pprof" // Подключаем ради действий, которые неявно выполняются при инициализации
 	"os"
 	"os/signal"
 	"runtime"
@@ -93,6 +96,10 @@ func collect(cfg *PipelineConfig) {
 }
 
 func main() {
+	go func() {
+		log.Println(http.ListenAndServe("localhost:6060", nil))
+	}()
+
 	const srcFileName = "rockyou.txt"
 	var maxWorkers = runtime.GOMAXPROCS(0) // ставим лимит не выше числа доступных ядер
 	var count atomic.Uint64
