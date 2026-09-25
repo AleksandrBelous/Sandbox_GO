@@ -93,7 +93,7 @@ func collect(cfg *PipelineConfig) {
 }
 
 func main() {
-	const srcFileName = "xato-net-10-million-passwords-1000000.txt"
+	const srcFileName = "rockyou.txt"
 	var maxWorkers = runtime.GOMAXPROCS(0) // ставим лимит не выше числа доступных ядер
 	var count atomic.Uint64
 
