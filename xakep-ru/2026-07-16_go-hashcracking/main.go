@@ -6,12 +6,10 @@ import (
 	"crypto/md5"
 	"encoding/hex"
 	"fmt"
-	"log"
-	"net/http"
-	_ "net/http/pprof" // Подключаем ради действий, которые неявно выполняются при инициализации
 	"os"
 	"os/signal"
 	"runtime"
+	"runtime/pprof"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -96,9 +94,17 @@ func collect(cfg *PipelineConfig) {
 }
 
 func main() {
-	go func() {
-		log.Println(http.ListenAndServe("localhost:6060", nil))
-	}()
+	f, err := os.Create("cpu.prof")
+	if err != nil {
+		panic(err)
+	}
+	defer f.Close()
+
+	if err := pprof.StartCPUProfile(f); err != nil {
+		panic(err)
+	}
+	// Между вызовами Start и Stop будут производиться замеры
+	defer pprof.StopCPUProfile()
 
 	const srcFileName = "rockyou.txt"
 	var maxWorkers = runtime.GOMAXPROCS(0) // ставим лимит не выше числа доступных ядер
@@ -116,7 +122,7 @@ func main() {
 		os.Exit(1)
 	}
 	var hashBytes [md5.Size]byte
-	_, err := hex.Decode(hashBytes[:], []byte(hashStr))
+	_, err = hex.Decode(hashBytes[:], []byte(hashStr))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%v", err)
 		os.Exit(1)
